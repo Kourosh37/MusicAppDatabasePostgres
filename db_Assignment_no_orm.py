@@ -82,6 +82,31 @@ def create_tables():
             rating INTEGER CHECK (rating >= 1 AND rating <= 5),
             PRIMARY KEY (user_id, song_id)
         );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS song_likes (
+            user_id INTEGER REFERENCES users(id),
+            song_id INTEGER REFERENCES songs(id),
+            liked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, song_id)
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS artist_follows (
+            user_id INTEGER REFERENCES users(id),
+            artist_id INTEGER REFERENCES artists(id),
+            followed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_id, artist_id)
+        );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS song_comments (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            song_id INTEGER REFERENCES songs(id),
+            comment TEXT NOT NULL,
+            commented_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
         """
     ]
     conn = connect()
@@ -97,7 +122,6 @@ def menu():
     table = Table(title="🎵 Music App CLI Menu 🎵")
     table.add_column("Option", style="cyan", no_wrap=True)
     table.add_column("Action", style="magenta")
-    
     actions = [
         ("1", "Manage Users"),
         ("2", "Manage Artists"),
@@ -108,12 +132,15 @@ def menu():
         ("7", "View Play History"),
         ("8", "Manage Song Ratings"),
         ("9", "Create Tables"),
+        ("10", "Manage Song Likes"),
+        ("11", "Manage Artist Follows"),
+        ("12", "Manage Song Comments"),
         ("0", "Exit")
     ]
-    
     for opt, desc in actions:
         table.add_row(opt, desc)
     console.print(table)
+
 
 # ========== USER CRUD ==========
 def manage_users():
@@ -1218,12 +1245,339 @@ def delete_rating():
             cur.close()
             conn.close()
 
+# ========== SONG LIKES ==========
+def manage_song_likes():
+    while True:
+        table = Table(title="👍 Song Likes Management")
+        table.add_column("Option", style="cyan")
+        table.add_column("Action", style="magenta")
+        table.add_row("1", "Add Like")
+        table.add_row("2", "Show Likes")
+        table.add_row("3", "Delete Like")
+        table.add_row("4", "Back to Main Menu")
+        console.print(table)
+
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4"])
+        if choice == "1":
+            add_song_like()
+        elif choice == "2":
+            show_song_likes()
+        elif choice == "3":
+            delete_song_like()
+        elif choice == "4":
+            break
+
+def add_song_like():
+    show_users()
+    user_id = Prompt.ask("Enter user ID")
+    show_songs()
+    song_id = Prompt.ask("Enter song ID")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO song_likes (user_id, song_id)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, song_id) DO NOTHING;
+        """, (user_id, song_id))
+        conn.commit()
+        if cur.rowcount > 0:
+            console.print(f"[green]Like added successfully![/green]")
+        else:
+            console.print("[yellow]User already liked this song![/yellow]")
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+def show_song_likes():
+    show_songs()
+    song_id = Prompt.ask("Enter song ID to show likes (leave blank for all)", default="")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        if song_id:
+            cur.execute("""
+                SELECT u.username, s.title, sl.liked_at
+                FROM song_likes sl
+                JOIN users u ON sl.user_id = u.id
+                JOIN songs s ON sl.song_id = s.id
+                WHERE sl.song_id = %s
+                ORDER BY sl.liked_at DESC
+            """, (song_id,))
+            title = f"Likes for Song {song_id}"
+        else:
+            cur.execute("""
+                SELECT u.username, s.title, sl.liked_at
+                FROM song_likes sl
+                JOIN users u ON sl.user_id = u.id
+                JOIN songs s ON sl.song_id = s.id
+                ORDER BY sl.liked_at DESC
+            """)
+            title = "All Song Likes"
+        likes = cur.fetchall()
+        table = Table(title=title)
+        table.add_column("User")
+        table.add_column("Song")
+        table.add_column("Liked At")
+        for l in likes:
+            table.add_row(l[0], l[1], str(l[2]))
+        console.print(table)
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+def delete_song_like():
+    show_users()
+    user_id = Prompt.ask("Enter user ID")
+    show_songs()
+    song_id = Prompt.ask("Enter song ID")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM song_likes WHERE user_id=%s AND song_id=%s
+        """, (user_id, song_id))
+        conn.commit()
+        if cur.rowcount > 0:
+            console.print(f"[green]Like deleted successfully![/green]")
+        else:
+            console.print("[red]Like not found![/red]")
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+# ========== ARTIST FOLLOWS ==========
+def manage_artist_follows():
+    while True:
+        table = Table(title="👤 Artist Follows Management")
+        table.add_column("Option", style="cyan")
+        table.add_column("Action", style="magenta")
+        table.add_row("1", "Follow Artist")
+        table.add_row("2", "Show Follows")
+        table.add_row("3", "Unfollow Artist")
+        table.add_row("4", "Back to Main Menu")
+        console.print(table)
+
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4"])
+        if choice == "1":
+            add_artist_follow()
+        elif choice == "2":
+            show_artist_follows()
+        elif choice == "3":
+            delete_artist_follow()
+        elif choice == "4":
+            break
+
+def add_artist_follow():
+    show_users()
+    user_id = Prompt.ask("Enter user ID")
+    show_artists()
+    artist_id = Prompt.ask("Enter artist ID")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO artist_follows (user_id, artist_id)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, artist_id) DO NOTHING;
+        """, (user_id, artist_id))
+        conn.commit()
+        if cur.rowcount > 0:
+            console.print("[green]Artist followed successfully![/green]")
+        else:
+            console.print("[yellow]User already follows this artist![/yellow]")
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+def show_artist_follows():
+    show_users()
+    user_id = Prompt.ask("Enter user ID to show follows (leave blank for all)", default="")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        if user_id:
+            cur.execute("""
+                SELECT u.username, a.name, af.followed_at
+                FROM artist_follows af
+                JOIN users u ON af.user_id = u.id
+                JOIN artists a ON af.artist_id = a.id
+                WHERE af.user_id = %s
+                ORDER BY af.followed_at DESC
+            """, (user_id,))
+            title = f"Follows for User {user_id}"
+        else:
+            cur.execute("""
+                SELECT u.username, a.name, af.followed_at
+                FROM artist_follows af
+                JOIN users u ON af.user_id = u.id
+                JOIN artists a ON af.artist_id = a.id
+                ORDER BY af.followed_at DESC
+            """)
+            title = "All Artist Follows"
+        follows = cur.fetchall()
+        table = Table(title=title)
+        table.add_column("User")
+        table.add_column("Artist")
+        table.add_column("Followed At")
+        for f in follows:
+            table.add_row(f[0], f[1], str(f[2]))
+        console.print(table)
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+def delete_artist_follow():
+    show_users()
+    user_id = Prompt.ask("Enter user ID")
+    show_artists()
+    artist_id = Prompt.ask("Enter artist ID")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM artist_follows WHERE user_id=%s AND artist_id=%s
+        """, (user_id, artist_id))
+        conn.commit()
+        if cur.rowcount > 0:
+            console.print("[green]Unfollowed successfully![/green]")
+        else:
+            console.print("[red]Follow not found![/red]")
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+# ========== SONG COMMENTS ==========
+def manage_song_comments():
+    while True:
+        table = Table(title="💬 Song Comments Management")
+        table.add_column("Option", style="cyan")
+        table.add_column("Action", style="magenta")
+        table.add_row("1", "Add Comment")
+        table.add_row("2", "Show Comments")
+        table.add_row("3", "Delete Comment")
+        table.add_row("4", "Back to Main Menu")
+        console.print(table)
+
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4"])
+        if choice == "1":
+            add_song_comment()
+        elif choice == "2":
+            show_song_comments()
+        elif choice == "3":
+            delete_song_comment()
+        elif choice == "4":
+            break
+
+def add_song_comment():
+    show_users()
+    user_id = Prompt.ask("Enter user ID")
+    show_songs()
+    song_id = Prompt.ask("Enter song ID")
+    comment = Prompt.ask("Enter comment text")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO song_comments (user_id, song_id, comment)
+            VALUES (%s, %s, %s);
+        """, (user_id, song_id, comment))
+        conn.commit()
+        console.print("[green]Comment added successfully![/green]")
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+def show_song_comments():
+    show_songs()
+    song_id = Prompt.ask("Enter song ID to show comments (leave blank for all)", default="")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        if song_id:
+            cur.execute("""
+                SELECT sc.id, u.username, s.title, sc.comment, sc.commented_at
+                FROM song_comments sc
+                JOIN users u ON sc.user_id = u.id
+                JOIN songs s ON sc.song_id = s.id
+                WHERE sc.song_id = %s
+                ORDER BY sc.commented_at DESC
+            """, (song_id,))
+            title = f"Comments for Song {song_id}"
+        else:
+            cur.execute("""
+                SELECT sc.id, u.username, s.title, sc.comment, sc.commented_at
+                FROM song_comments sc
+                JOIN users u ON sc.user_id = u.id
+                JOIN songs s ON sc.song_id = s.id
+                ORDER BY sc.commented_at DESC
+            """)
+            title = "All Song Comments"
+        comments = cur.fetchall()
+        table = Table(title=title)
+        table.add_column("ID")
+        table.add_column("User")
+        table.add_column("Song")
+        table.add_column("Comment")
+        table.add_column("Commented At")
+        for c in comments:
+            table.add_row(str(c[0]), c[1], c[2], c[3], str(c[4]))
+        console.print(table)
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+def delete_song_comment():
+    show_song_comments()
+    comment_id = Prompt.ask("Enter comment ID to delete")
+    try:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("""
+            DELETE FROM song_comments WHERE id=%s
+        """, (comment_id,))
+        conn.commit()
+        if cur.rowcount > 0:
+            console.print("[green]Comment deleted successfully![/green]")
+        else:
+            console.print("[red]Comment not found![/red]")
+    except psycopg2.Error as e:
+        console.print(f"[red]Error: {e}[/red]")
+    finally:
+        if conn:
+            cur.close()
+            conn.close()
+
+
 # ========== MAIN FUNCTION ==========
 def main():
     while True:
         menu()
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"])
-        
+        choice = Prompt.ask("Choose an option", choices=[str(i) for i in range(13)])
         if choice == "1":
             manage_users()
         elif choice == "2":
@@ -1242,9 +1596,16 @@ def main():
             manage_song_ratings()
         elif choice == "9":
             create_tables()
+        elif choice == "10":
+            manage_song_likes()
+        elif choice == "11":
+            manage_artist_follows()
+        elif choice == "12":
+            manage_song_comments()
         elif choice == "0":
             console.print("[yellow]Goodbye![/yellow]")
             break
+
 
 if __name__ == '__main__':
     main()
